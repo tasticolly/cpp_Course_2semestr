@@ -2,16 +2,12 @@
 #include <iterator>
 #include <memory>
 #include<iostream>
+
 template<size_t N>
 class StackStorage {
 
  public:
-  char* getMemory() {
-    return memory_;
-  }
-  char* getPointer() {
-    return pointer_;
-  }
+
   StackStorage() = default;
   char* allocate(size_t byte, size_t align) {
     char* p = pointer_ + (align - (reinterpret_cast<uintptr_t>(pointer_)) % align);
@@ -99,19 +95,12 @@ class List {
   struct Node: BaseNode {
     T value;
     Node(BaseNode* next, BaseNode* prev, const T& value)
-        : value(value) {
-      BaseNode::prev = prev;
-      BaseNode::next = next;
-    }
-    Node(BaseNode* next, BaseNode* prev): value() {
-      BaseNode::prev = prev;
-      BaseNode::next = next;
-    }
+        : BaseNode(next, prev), value(value) {}
+    Node(BaseNode* next, BaseNode* prev): BaseNode(next, prev), value() {}
 
   };
 
   void destruct() {
-
     while (size_) {
       pop_back();
     }
@@ -194,7 +183,7 @@ class List {
     return *this;
   }
 
-  ~List() {
+  ~List() noexcept {
     destruct();
   }
 
@@ -206,7 +195,7 @@ class List {
     using difference_type = long long;
     using pointer = typename std::conditional<is_const, const T*, T*>::type;
     using reference = typename std::conditional<is_const, const T&, T&>::type;
-    BaseNode* get_node() {
+    BaseNode* getNode() {
       return node_;
     }
     CommonIterator() = default;
@@ -288,45 +277,45 @@ class List {
   void putBefore(const_iterator iter, const T& elem) {
     Node* newNode = NodeTraits::allocate(allocator_, 1);
     try {
-      NodeTraits::construct(allocator_, newNode, iter.get_node(), iter.get_node()->prev, elem);
+      NodeTraits::construct(allocator_, newNode, iter.getNode(), iter.getNode()->prev, elem);
     } catch (...) {
       NodeTraits::deallocate(allocator_, newNode, 1);
       throw;
     }
-    iter.get_node()->prev->next = static_cast<BaseNode*>(newNode);
-    iter.get_node()->prev = static_cast<BaseNode*>(newNode);
+    iter.getNode()->prev->next = static_cast<BaseNode*>(newNode);
+    iter.getNode()->prev = static_cast<BaseNode*>(newNode);
     ++size_;
   }
 
   void emplaceBefore(const_iterator iter) {
     Node* newNode = NodeTraits::allocate(allocator_, 1);
     try {
-      NodeTraits::construct(allocator_, newNode, iter.get_node(), iter.get_node()->prev);
+      NodeTraits::construct(allocator_, newNode, iter.getNode(), iter.getNode()->prev);
     } catch (...) {
       NodeTraits::deallocate(allocator_, newNode, 1);
       throw;
     }
-    iter.get_node()->prev->next = static_cast<BaseNode*>(newNode);
-    iter.get_node()->prev = static_cast<BaseNode*>(newNode);
+    iter.getNode()->prev->next = static_cast<BaseNode*>(newNode);
+    iter.getNode()->prev = static_cast<BaseNode*>(newNode);
     ++size_;
   }
 
-  void redirect_for_erase(const_iterator iter) {
-    iter.get_node()->next->prev = iter.get_node()->prev;
-    iter.get_node()->prev->next = iter.get_node()->next;
-    NodeTraits::destroy(allocator_, static_cast<Node*>(iter.get_node()));
-    NodeTraits::deallocate(allocator_, static_cast<Node*>(iter.get_node()), 1);
+  void redirectForErase(const_iterator iter) {
+    iter.getNode()->next->prev = iter.getNode()->prev;
+    iter.getNode()->prev->next = iter.getNode()->next;
+    NodeTraits::destroy(allocator_, static_cast<Node*>(iter.getNode()));
+    NodeTraits::deallocate(allocator_, static_cast<Node*>(iter.getNode()), 1);
     --size_;
   }
 
   const_iterator insert(const_iterator iter, const T& elem) {
     putBefore(iter, elem);
-    return iterator(static_cast<BaseNode*>(iter.get_node()->prev));
+    return iterator(static_cast<BaseNode*>(iter.getNode()->prev));
   }
 
   const_iterator erase(const_iterator iter) {
     auto prev = --iter;
-    redirect_for_erase(++iter);
+    redirectForErase(++iter);
     return prev;
   }
 
@@ -338,13 +327,13 @@ class List {
   }
 
   void pop_back() {
-    redirect_for_erase(--end());
+    redirectForErase(--end());
   }
   void pop_front() {
-    redirect_for_erase(begin());
+    redirectForErase(begin());
   }
 
-  size_t size() const {
+  size_t size() const noexcept {
     return size_;
   }
 
