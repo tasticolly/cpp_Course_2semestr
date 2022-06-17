@@ -28,35 +28,53 @@ class Deque {
  public:
   //------------------------------CONSTRUCTORS------------------------------------
   Deque(): array_(new T* [1]), firstElem_(0), size_(0), capacity(0) {
-    reserve(1);
+    try {
+      reserve(1);
+    } catch (...) {
+      delete[] array_;
+      throw;
+    }
   }
   Deque(const Deque& other): Deque() {
-    reserve((((other.size_ + sizeOfBucket - 1) / sizeOfBucket) / 3 + 1) * 3);
+
+    reserve(greaterDivisibleByN(increasingConstant, other));
     for (size_t i = 0; i < other.size_; ++i) {
-      push_back(other[i]);
-    }
-  }
-  Deque(const size_t number): Deque() {
-    reserve((((number + sizeOfBucket - 1) / sizeOfBucket) / 3 + 1) * 3);
-    for (size_t i = 0; i < number; ++i) {
-      push_back(T());
-    }
-  }
-  Deque(const size_t number, const T& elem): Deque() {
-    reserve((((number + sizeOfBucket - 1) / sizeOfBucket) / 3 + 1) * 3);
-    for (size_t i = 0; i < number; ++i) {
-      push_back(elem);
+      try {
+        push_back(other[i]);
+      } catch (...) {
+        clear();
+        throw;
+      }
     }
   }
 
-  ~Deque() {
-    for (iterator iter = begin(); iter < end(); ++iter) {
-      iter->~T();
+  Deque(const size_t number): Deque() {
+    reserve(greaterDivisibleByN(increasingConstant));
+
+    for (size_t i = 0; i < number; ++i) {
+      try {
+        push_back(T());
+      } catch (...) {
+        clear();
+        throw;
+      }
     }
-    for (size_t i = 0; i < capacity; ++i) {
-      delete[] reinterpret_cast<uint8_t*>(array_[i]);
+  }
+
+  Deque(const size_t number, const T& elem): Deque() {
+    reserve(greaterDivisibleByN(increasingConstant));
+    for (size_t i = 0; i < number; ++i) {
+      try {
+        push_back(elem);
+      } catch (...) {
+        clear();
+        throw;
+      }
     }
-    delete[] array_;
+  }
+
+  ~Deque() noexcept {
+    clear();
   }
 
   Deque& operator=(const Deque& other) {
@@ -71,11 +89,11 @@ class Deque {
   }
 
   void push_back(const T& elem) {
-    if (firstElem_ + size_ >= sizeOfBucket * capacity) {
-      reserve(3 * capacity);
+    if (backCapacity() >= sizeOfBucket * capacity) {
+      reserve(increasingConstant * capacity);
     }
     try {
-      new(*pointerToBucket(firstElem_ + size_) + placeInBucket(firstElem_ + size_)) T(elem);
+      new(pointerToElem(backCapacity())) T(elem);
     } catch (...) {
       throw;
     }
@@ -84,18 +102,16 @@ class Deque {
 
   void push_front(const T& elem) {
     if (firstElem_ == 0) {
-      reserve(capacity * 3);
+      reserve(capacity * increasingConstant);
     }
 
-    --firstElem_;
-    ++size_;
     try {
-      new(*pointerToBucket(firstElem_) + placeInBucket(firstElem_)) T(elem);
+      new(pointerToElem(firstElem_ - 1)) T(elem);
     } catch (...) {
-      --size_;
-      ++firstElem_;
       throw;
     }
+    --firstElem_;
+    ++size_;
   }
 
   void pop_back() {
@@ -120,7 +136,7 @@ class Deque {
       throw std::out_of_range("index bigger than size");
     } else {
       return (*this)[index];
-    };
+    }
   }
 
   const T& at(const size_t index) const {
@@ -131,7 +147,7 @@ class Deque {
     }
   }
 
-  size_t size() const {
+  size_t size() const noexcept {
     return size_;
   }
 
@@ -179,9 +195,8 @@ class Deque {
         bucket_ += (index) / sizeOfBucket;
         elem_ = *bucket_ + (index % sizeOfBucket);
       } else {
-        index *= -1;
-        bucket_ -= (index + sizeOfBucket - 1) / sizeOfBucket;
-        elem_ = *bucket_ + (sizeOfBucket - (index) % sizeOfBucket);
+        bucket_ -= (-index + sizeOfBucket - 1) / sizeOfBucket;
+        elem_ = *bucket_ + (sizeOfBucket - (-index) % sizeOfBucket);
       }
       return *this;
     }
@@ -224,17 +239,25 @@ class Deque {
       return copy;
     }
 
-    int operator-(const CommonIterator& other) {
-      return sizeOfBucket * (bucket_ - other.bucket_) + (elem_ - bucket_[0] - (other.elem_ - other.bucket_[0]));
+    int operator-(const CommonIterator& other) const {
+      return sizeOfBucket * distBetweenBuckets(other) + distBetweenElems(other);
     }
 
    private:
     T* elem_;
     T** bucket_;
+
+    int distBetweenBuckets(const CommonIterator& other) const {
+      return bucket_ - other.bucket_;
+    }
+
+    int distBetweenElems(const CommonIterator& other) const {
+      return elem_ - bucket_[0] - (other.elem_ - other.bucket_[0]);
+    }
   };
 
   iterator begin() {
-    return iterator(*pointerToBucket(firstElem_) + placeInBucket(firstElem_), pointerToBucket(firstElem_));
+    return iterator(pointerToElem(firstElem_), pointerToBucket(firstElem_));
   }
   iterator end() {
     return begin() + size_;
@@ -246,7 +269,7 @@ class Deque {
     return cbegin();
   }
   const_iterator cbegin() const {
-    return const_iterator(iterator(*pointerToBucket(firstElem_) + placeInBucket(firstElem_),
+    return const_iterator(iterator(pointerToElem(firstElem_),
                                    pointerToBucket(firstElem_)));
   }
   const_iterator cend() const {
@@ -286,52 +309,85 @@ class Deque {
   size_t size_;
   size_t capacity;
   static const size_t sizeOfBucket = 32;
+  static const size_t increasingConstant = 3;
 
-  void reserve(size_t cap) { //cap = capacity * 3
-    T** newarray = new T* [cap];
+  size_t greaterDivisibleByN(size_t n, const Deque& other) const {
+    return (numOfBuckets(other) / n + 1) * n;
+  }
+  size_t numOfBuckets(const Deque& other) const {
+    return (other.size_ + sizeOfBucket - 1) / sizeOfBucket;
+  }
 
-    if (cap == 1) {
-      *newarray = reinterpret_cast<T*> (new uint8_t[sizeOfBucket * sizeof(T)]);
-    } else {
-      for (size_t i = 0; i < (cap - capacity) / 2; ++i) {
-        newarray[i] = reinterpret_cast<T*> (new uint8_t[sizeOfBucket * sizeof(T)]);
-      }
-      for (size_t i = (cap + capacity) / 2; i < cap; ++i) {
-        newarray[i] = reinterpret_cast<T*> (new uint8_t[sizeOfBucket * sizeof(T)]);
-      }
+  auto pointerToElem(size_t indexOfElem) const {
+    return *pointerToBucket(indexOfElem) + placeInBucket(indexOfElem);
+  }
+
+  void clear() noexcept {
+    for (iterator iter = begin(); iter < end(); ++iter) {
+      iter->~T();
     }
-//    std::cout << newarray[0] + 1 << std::endl;
     for (size_t i = 0; i < capacity; ++i) {
-      try {
-        new(newarray + (cap - capacity) / 2 + i) T*(array_[i]);
-      } catch (...) {
-
-        if (cap == 1) {
-          delete[] reinterpret_cast<uint8_t*>(*array_);
-        } else {
-          for (size_t ind = 0; ind < cap / 3; ++ind) {
-            delete[] reinterpret_cast<uint8_t*>(array_[ind]);
-          }
-          for (size_t ind = 2 * cap / 3; ind < cap; ++ind) {
-            delete[] reinterpret_cast<uint8_t*>(array_[ind]);
-          }
-        }
-        delete[] newarray;
-        throw;
-      }
+      delete[] reinterpret_cast<uint8_t*>(array_[i]);
     }
     delete[] array_;
-    firstElem_ += (cap / 3 ? cap / 3 : 1) * sizeOfBucket;
+  }
+
+  void reserve(size_t cap) { //cap = capacity * 3
+    T** newarray;
+
+    size_t leftBorder = 0;
+    size_t rightBorder = (cap + capacity) / 2;
+    try {
+      newarray = new T* [cap];
+      if (cap == 1) {
+        *newarray = allocateRawMemory();
+      } else {
+        for (leftBorder = 0; leftBorder < (cap - capacity) / 2; ++leftBorder) {
+          newarray[leftBorder] = allocateRawMemory();
+        }
+        for (rightBorder = (cap + capacity) / 2; rightBorder < cap; ++rightBorder) {
+          newarray[rightBorder] = allocateRawMemory();
+        }
+        for (size_t i = 0; i < capacity; ++i) {
+          new(newarray + (cap - capacity) / 2 + i) T*(array_[i]);
+        }
+      }
+    } catch (...) {
+      if (cap == 1) {
+        deallocateMemory(0);
+      } else {
+        for (size_t ind = 0; ind < leftBorder; ++ind) {
+          deallocateMemory(ind);
+        }
+        for (size_t ind = (cap + capacity) / 2; ind < rightBorder; ++ind) {
+          deallocateMemory(ind);
+        }
+      }
+      delete[] newarray;
+      throw;
+    }
+
+    delete[] array_;
+    firstElem_ += (cap / increasingConstant ? cap / increasingConstant : 1) * sizeOfBucket;
     capacity = cap;
     array_ = newarray;
 
   }
 
+  T* allocateRawMemory() {
+    return reinterpret_cast<T*>(new uint8_t[sizeOfBucket * sizeof(T)]);
+  }
+  void deallocateMemory(size_t index) {
+    delete[] reinterpret_cast<uint8_t*>(array_[index]);
+  }
+  size_t backCapacity() {
+    return firstElem_ + size_;
+  }
   T** pointerToBucket(size_t index) const {
     return array_ + (index / sizeOfBucket);
   }
   size_t placeInBucket(size_t index) const {
-    return (index % sizeOfBucket);
+    return index % sizeOfBucket;
   }
   void swap(Deque<T>& other) {
     std::swap(array_, other.array_);
