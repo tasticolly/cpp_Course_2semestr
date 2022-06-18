@@ -411,7 +411,7 @@ class UnorderedMap {
   void rehash(const size_t& count) {
 
     auto copy = List<NodeType, Alloc>(allocator_);
-
+    
     table =
         std::vector<tableElem, typename AllocTraits::template rebind_alloc<tableElem>>(count,
                                                                                        {copy.end(), copy.end()},
@@ -505,7 +505,7 @@ class UnorderedMap {
 
   template<typename Iter>
   void insert(Iter begin, Iter end) {
-    reserve(size() + std::abs(std::distance(begin, end)));
+    reserve(size() + std::abs(std::distance(begin, end))); //TODO: exception safety
     for (auto it = begin; it != end; ++it)
       insert(*it);
   }
@@ -533,15 +533,6 @@ class UnorderedMap {
     } else {
       dataList.erase(it);
     }
-  }
-
-  void print_elems() {
-    int count = 0;
-    for (auto it = begin(); it != end(); ++it) {
-      std::cout << (*it).first << " " << (*it).second << " ";
-      ++count;
-    }
-    std::cout << std::endl << count << std::endl;
   }
 
   Value& at(const Key& key) {
@@ -612,7 +603,7 @@ class UnorderedMap {
         copy.push_back(*it);
       }
     } catch (...) {
-      copy.destruct();
+      copy.destructList();
       throw;
     }
     swap(copy);
@@ -621,7 +612,7 @@ class UnorderedMap {
 
   UnorderedMap& operator=(UnorderedMap&& other) noexcept {
     if (this != &other) {
-      destruct();
+      destructList();
       allocator_ = std::move(AllocTraits::propagate_on_container_copy_assignment::value ? other.allocator_
                                                                                         : AllocTraits::select_on_container_copy_construction(
               other.allocator_));
@@ -643,7 +634,7 @@ class UnorderedMap {
 
  private:
 
-  void destruct() {
+  void destructList() noexcept{
     dataList.clear();
   }
   size_t getHash(const Key& key) const {
