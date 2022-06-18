@@ -29,7 +29,7 @@ class List {
     Node& operator=(const Node& other) noexcept = default;
   };
 
-  void destruct() {
+  void destruct() noexcept {
     clear();
     BaseNodeTraits::destroy(baseAllocator_, fakeNode_);
     BaseNodeTraits::deallocate(baseAllocator_, fakeNode_, 1);
@@ -134,13 +134,13 @@ class List {
     }
     return *this;
   }
-  void clear() {
+  void clear() noexcept {
     while (size_) {
       pop_back();
     }
   }
 
-  ~List() {
+  ~List() noexcept {
     destruct();
   }
 
@@ -252,6 +252,8 @@ class List {
       NodeTraits::construct(allocator_, newNode, newElem);
     } catch (...) {
       NodeTraits::deallocate(allocator_, newNode, 1);
+      AllocTraits::destroy(tmp, newElem);
+      AllocTraits::deallocate(tmp, newElem, 1);
     }
     newNode->next = iter.getNode();
     newNode->prev = iter.getNode()->prev;
@@ -282,7 +284,7 @@ class List {
     emplace(begin(), pvalue);
   }
 
-  void redirectForErase(const_iterator iter) {
+  void redirectForErase(const_iterator iter) noexcept {
     auto tmp = get_allocator();
     iter.getNode()->next->prev = iter.getNode()->prev;
     iter.getNode()->prev->next = iter.getNode()->next;
@@ -304,7 +306,7 @@ class List {
     return iterator(static_cast<BaseNode*>(iter.getNode()->prev));
   }
 
-  iterator erase(const_iterator iter) {
+  iterator erase(const_iterator iter) noexcept {
     auto prev = --iter;
     redirectForErase(++iter);
     return iterator(prev.getNode());
@@ -326,14 +328,14 @@ class List {
     emplace(begin(), std::move(elem));
   }
 
-  void pop_back() {
+  void pop_back() noexcept {
     redirectForErase(--end());
   }
-  void pop_front() {
+  void pop_front() noexcept {
     redirectForErase(begin());
   }
 
-  size_t size() const {
+  size_t size() const noexcept {
     return size_;
   }
 
@@ -411,7 +413,7 @@ class UnorderedMap {
   void rehash(const size_t& count) {
 
     auto copy = List<NodeType, Alloc>(allocator_);
-    
+
     table =
         std::vector<tableElem, typename AllocTraits::template rebind_alloc<tableElem>>(count,
                                                                                        {copy.end(), copy.end()},
@@ -505,7 +507,7 @@ class UnorderedMap {
 
   template<typename Iter>
   void insert(Iter begin, Iter end) {
-    reserve(size() + std::abs(std::distance(begin, end))); //TODO: exception safety
+    reserve(size() + std::abs(std::distance(begin, end)));
     for (auto it = begin; it != end; ++it)
       insert(*it);
   }
@@ -599,11 +601,9 @@ class UnorderedMap {
         AllocTraits::propagate_on_container_copy_assignment::value ? UnorderedMap<NodeType, Alloc>(other.allocator_) :
         UnorderedMap<NodeType, Alloc>(AllocTraits::select_on_container_copy_construction(other.allocator_));
     try {
-      for (auto it = other.begin(); it != other.end(); ++it) {
-        copy.push_back(*it);
-      }
+      insert(other.begin(),other.end());
     } catch (...) {
-      copy.destructList();
+      copy.clear();
       throw;
     }
     swap(copy);
@@ -612,7 +612,6 @@ class UnorderedMap {
 
   UnorderedMap& operator=(UnorderedMap&& other) noexcept {
     if (this != &other) {
-      destructList();
       allocator_ = std::move(AllocTraits::propagate_on_container_copy_assignment::value ? other.allocator_
                                                                                         : AllocTraits::select_on_container_copy_construction(
               other.allocator_));
@@ -634,7 +633,7 @@ class UnorderedMap {
 
  private:
 
-  void destructList() noexcept{
+  void destructList() noexcept {
     dataList.clear();
   }
   size_t getHash(const Key& key) const {
@@ -653,39 +652,27 @@ class UnorderedMap {
   }
 
   const_iterator find(const Key& key, const size_t& currentHash) const {
-    auto tmp = ++table[currentHash].second;
-    --table[currentHash].second;
-    for (auto iter = table[currentHash].first; iter != tmp && iter != end(); ++iter) {
-      if (equalTo_(key, iter->first)) {
-        return const_iterator(iter);
-      }
-    }
-    return cend();
+    return const_iterator(find(key, currentHash));
   }
 
-  iterator find(Key&& key, const size_t& currentHash) {
-    auto tmp = ++table[currentHash].second;
-    --table[currentHash].second;
-    for (auto iter = table[currentHash].first; iter != tmp && iter != end(); ++iter) {
-      if (equalTo_(key, iter->first)) {
-        return iter;
-      }
+  void clear(){
+    while (size()){
+      erase(begin());
     }
-    return end();
   }
-
-  const_iterator find(Key&& key, const size_t& currentHash) const {
-    auto tmp = ++table[currentHash].second;
-    --table[currentHash].second;
-    for (auto iter = table[currentHash].first; iter != tmp && iter != end(); ++iter) {
-      if (equalTo_(key, iter->first)) {
-        return const_iterator(iter);
-      }
-    }
-    return cend();
-  }
-
  private:
+
+  void swap(UnorderedMap other){
+    std::swap(sizeOfTable_,other.sizeOfTable_);
+    std::swap(maxLoadFactor_, other.maxLoadFactor_);
+    std::swap(allocator_, other.allocator_);
+    std::swap(dataList, other.dataList);
+    std::swap(table, other.table);
+    std::swap(equalTo_,other.equalTo_);
+    std::swap(hash_, other.hash_);
+  }
+
+
 
   size_t sizeOfTable_ = DEFAULT_SIZE_OF_TABLE;
   float maxLoadFactor_ = 0.7;
@@ -699,6 +686,7 @@ class UnorderedMap {
   EqualTo equalTo_ = EqualTo();
   Hash hash_ = Hash();
   static const size_t DEFAULT_SIZE_OF_TABLE = 128;
+
 };
 
 
