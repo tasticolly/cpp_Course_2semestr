@@ -240,11 +240,18 @@ class List {
   template<typename... Args>
   void emplace(const_iterator iter, Args&& ... args) {
     auto tmp = get_allocator();
+    Node* newNode;
     T* newElem = AllocTraits::allocate(tmp, 1);
-    Node* newNode = NodeTraits::allocate(allocator_, 1);
     try {
       AllocTraits::construct(tmp, newElem, std::forward<Args>(args)...);
     } catch (...) {
+      AllocTraits::deallocate(tmp, newElem, 1);
+      throw;
+    }
+    try {
+      newNode = NodeTraits::allocate(allocator_, 1);
+    } catch (...) {
+      AllocTraits::destroy(tmp, newElem);
       AllocTraits::deallocate(tmp, newElem, 1);
       throw;
     }
@@ -254,7 +261,9 @@ class List {
       NodeTraits::deallocate(allocator_, newNode, 1);
       AllocTraits::destroy(tmp, newElem);
       AllocTraits::deallocate(tmp, newElem, 1);
+      throw;
     }
+
     newNode->next = iter.getNode();
     newNode->prev = iter.getNode()->prev;
     iter.getNode()->prev->next = static_cast<BaseNode*>(newNode);
@@ -600,12 +609,7 @@ class UnorderedMap {
     auto copy =
         AllocTraits::propagate_on_container_copy_assignment::value ? UnorderedMap<NodeType, Alloc>(other.allocator_) :
         UnorderedMap<NodeType, Alloc>(AllocTraits::select_on_container_copy_construction(other.allocator_));
-    try {
-      insert(other.begin(),other.end());
-    } catch (...) {
-      copy.clear();
-      throw;
-    }
+    copy.insert(other.begin(), other.end());
     swap(copy);
     return *this;
   }
@@ -652,27 +656,25 @@ class UnorderedMap {
   }
 
   const_iterator find(const Key& key, const size_t& currentHash) const {
-    return const_iterator(find(key, currentHash));
+    return const_cast<UnorderedMap*>(this)->find(key, currentHash);
   }
 
-  void clear(){
-    while (size()){
+  void clear() {
+    while (size()) {
       erase(begin());
     }
   }
  private:
 
-  void swap(UnorderedMap other){
-    std::swap(sizeOfTable_,other.sizeOfTable_);
+  void swap(UnorderedMap other) {
+    std::swap(sizeOfTable_, other.sizeOfTable_);
     std::swap(maxLoadFactor_, other.maxLoadFactor_);
     std::swap(allocator_, other.allocator_);
     std::swap(dataList, other.dataList);
     std::swap(table, other.table);
-    std::swap(equalTo_,other.equalTo_);
+    std::swap(equalTo_, other.equalTo_);
     std::swap(hash_, other.hash_);
   }
-
-
 
   size_t sizeOfTable_ = DEFAULT_SIZE_OF_TABLE;
   float maxLoadFactor_ = 0.7;
